@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
@@ -28,7 +27,7 @@ func writeSubtitle(text string, outPath string) (err error) {
 00:00:00,000 --> 01:00:00,000
 ` + text + "\n"
 
-	return os.WriteFile(outPath, []byte(str), 0644)
+	return os.WriteFile(outPath, []byte(str), 0600)
 }
 
 type options struct {
@@ -62,22 +61,22 @@ func createGif(gifPath string, text string, o options, outPath string) (err erro
 		gifOptions.Alignment = o.Alignment
 	}
 
-	dir, err := ioutil.TempDir("", "skill-issue")
+	tmpDir, err := os.MkdirTemp("", "skill-issue")
 	if err != nil {
 		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	defer func() {
-		if dir == "" {
+		if tmpDir == "" {
 			return
 		}
-		rmerr := os.RemoveAll(dir)
+		rmerr := os.RemoveAll(tmpDir)
 		if err == nil {
 			err = rmerr
 		}
 	}()
 
 	const subtitleName = "sub.srt"
-	err = writeSubtitle(text, path.Join(dir, subtitleName))
+	err = writeSubtitle(text, path.Join(tmpDir, subtitleName))
 	if err != nil {
 		return fmt.Errorf("failed to write subtitle: %w", err)
 	}
@@ -88,19 +87,21 @@ func createGif(gifPath string, text string, o options, outPath string) (err erro
 		return fmt.Errorf("failed to extract gif: %w", err)
 	}
 
-	gifDiskPath := filepath.Join(dir, path.Base(gifPath))
-	err = os.WriteFile(gifDiskPath, gifBytes, 0644)
+	gifDiskPath := filepath.Join(tmpDir, path.Base(gifPath))
+	err = os.WriteFile(gifDiskPath, gifBytes, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to write gif: %w", err)
 	}
 
+	firstGIFPath := filepath.Join(tmpDir, "first-"+path.Base(gifPath)+".mp4")
 	var cmd = exec.Command(
 		"ffmpeg",
+		"-loglevel", "error",
 		"-i", gifDiskPath,
-		"-vf", fmt.Sprintf("subtitles=%s:force_style='Fontname=Impact,Fontsize=%d,Alignment=%d'", subtitleName, gifOptions.FontSize, gifOptions.Alignment),
-		outPath,
+		"-filter_complex", fmt.Sprintf("subtitles=%s:force_style='Fontname=Impact,Fontsize=%d,Alignment=%d'", subtitleName, gifOptions.FontSize, gifOptions.Alignment),
+		firstGIFPath,
 	)
-	cmd.Dir = dir
+	cmd.Dir = tmpDir
 
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -109,6 +110,46 @@ func createGif(gifPath string, text string, o options, outPath string) (err erro
 	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("failed to run ffmpeg: %w", err)
+	}
+
+	// Now generate a palette for the gif
+	var palettePath = filepath.Join(tmpDir, "palette.png")
+	cmd = exec.Command(
+		"ffmpeg",
+		"-loglevel", "error",
+		"-i", firstGIFPath,
+		"-vf", "palettegen",
+		palettePath,
+	)
+	cmd.Dir = tmpDir
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to generate palette: %w", err)
+	}
+
+	// Now generate the final gif
+	cmd = exec.Command(
+		"ffmpeg",
+		"-loglevel", "error",
+		"-i", firstGIFPath,
+		"-i", palettePath,
+		"-filter_complex", "paletteuse",
+		outPath,
+	)
+	cmd.Dir = tmpDir
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("failed to generate final gif: %w", err)
 	}
 
 	return nil
