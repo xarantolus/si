@@ -9,5 +9,5 @@ Now you can just run `si your text` to caption a random GIF with your text.
 
 That's it.
 
-# [License](LICENSE)
+### [License](LICENSE)
 MIT
