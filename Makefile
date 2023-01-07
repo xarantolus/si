@@ -1,11 +1,11 @@
 install:
-	go install
+	go install -ldflags "-s -w"
 
 build:
-	go build
+	go build -ldflags "-s -w"
 
 clean:
 	go clean
 	rm -f *.gif
 
-.PHONY: build install clean
+.PHONY: install clean build
