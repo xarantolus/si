@@ -35,7 +35,7 @@ type options struct {
 	Alignment int `json:"alignment"`
 }
 
-func createGif(gifPath string, text string, o options, outPath string) (err error) {
+func createGif(gifPath string, text string, o options, outPath string, overwrite bool) (err error) {
 	var infoPath = strings.TrimSuffix(gifPath, path.Ext(gifPath)) + ".json"
 
 	var gifOptions options
@@ -50,7 +50,7 @@ func createGif(gifPath string, text string, o options, outPath string) (err erro
 		gifOptions.FontSize = 50
 	}
 	if gifOptions.Alignment == 0 {
-		gifOptions.Alignment = 6
+		gifOptions.Alignment = 2
 	}
 
 	// Whatever the user wants
@@ -132,14 +132,21 @@ func createGif(gifPath string, text string, o options, outPath string) (err erro
 		return fmt.Errorf("failed to generate palette: %w", err)
 	}
 
-	// Now generate the final gif
-	cmd = exec.Command(
-		"ffmpeg",
+	var args = []string{
 		"-loglevel", "error",
 		"-i", firstGIFPath,
 		"-i", palettePath,
 		"-filter_complex", "paletteuse",
 		outPath,
+	}
+	if overwrite {
+		args = append([]string{"-y"}, args...)
+	}
+
+	// Now generate the final gif
+	cmd = exec.Command(
+		"ffmpeg",
+		args...,
 	)
 	cmd.Dir = tmpDir
 
@@ -173,10 +180,25 @@ func listAvailableGIFs() (paths []string, err error) {
 	return gifPaths, err
 }
 
+func findIndex(s []string, e string) int {
+	for i, a := range s {
+		if a == e {
+			return i
+		}
+	}
+	return -1
+}
+
 func main() {
+	var args = os.Args[1:]
+	var overwrite bool
+	if idx := findIndex(args, "-y"); idx != -1 {
+		args = append(args[:idx], args[idx+1:]...)
+		overwrite = true
+	}
 	var (
 		outputGIF string
-		text      = strings.Join(os.Args[1:], " ")
+		text      = strings.Join(args, " ")
 	)
 
 	inputText := strings.Join(strings.Fields(text), " ")
@@ -209,10 +231,10 @@ func main() {
 		log.Fatalln("failed to get absolute path:", err)
 	}
 
-	err = createGif(randomGIFPath, inputText, options{}, outPath)
+	err = createGif(randomGIFPath, inputText, options{}, outPath, overwrite)
 	if err != nil {
 		log.Fatalln("failed to create gif:", err)
 	}
 
-	log.Println("created gif:", outPath)
+	fmt.Println("created gif:", outPath)
 }
