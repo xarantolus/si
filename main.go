@@ -162,15 +162,18 @@ func createGif(gifPath string, text string, o options, outPath string, overwrite
 	return nil
 }
 
-func listAvailableGIFs() (paths []string, err error) {
+func listAvailableGIFs(search string) (paths []string, err error) {
 	var gifPaths []string
+
+	search = strings.ToLower(search)
 
 	err = fs.WalkDir(gifs, "gifs", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if !d.IsDir() && !strings.HasSuffix(d.Name(), ".json") {
+		if !d.IsDir() && !strings.HasSuffix(d.Name(), ".json") &&
+			(search == "" || strings.Contains(strings.ToLower(d.Name()), search)) {
 			gifPaths = append(gifPaths, path)
 		}
 
@@ -196,6 +199,12 @@ func main() {
 		args = append(args[:idx], args[idx+1:]...)
 		overwrite = true
 	}
+	var searchString string
+	if idx := findIndex(args, "-f"); idx != -1 && len(args) > idx+1 {
+		searchString = args[idx+1]
+		args = append(args[:idx], args[idx+2:]...)
+	}
+
 	var (
 		outputGIF string
 		text      = strings.Join(args, " ")
@@ -216,8 +225,11 @@ func main() {
 		}
 		return -1
 	}, inputText) + ".gif"
+	if outputGIF == ".gif" {
+		outputGIF = "out.gif"
+	}
 
-	gifPaths, err := listAvailableGIFs()
+	gifPaths, err := listAvailableGIFs(searchString)
 	if err != nil {
 		log.Fatalln("failed to list embedded gifs:", err)
 	}
